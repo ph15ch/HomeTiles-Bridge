@@ -1,0 +1,5 @@
+# Everything Home Assistant writes at runtime, and the test credentials.
+config/*
+!config/configuration.yaml
+.secrets/
+.env

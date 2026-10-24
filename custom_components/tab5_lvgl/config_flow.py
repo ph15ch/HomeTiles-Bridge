@@ -23,6 +23,7 @@ from homeassistant.helpers.network import get_url
 
 from . import link_mqtt
 from .access_helpers import parse_access_codes
+from .advertise_host import advertised_host
 from .binary_sensor_helpers import split_binary_sensor_entities
 from .panel_auth import ERROR_CANNOT_CONNECT, async_link_info, async_push_credentials, async_push_link
 from .capabilities import CAPABILITIES
@@ -46,6 +47,7 @@ from .const import (
   CONF_ENERGY_ELECTRICITY,
   CONF_ENERGY_GAS,
   CONF_ENERGY_WATER,
+  CONF_CALENDARS,
   CONF_FANS,
   CONF_HA_PREFIX,
   CONF_LIGHTS,
@@ -939,6 +941,7 @@ class Tab5OptionsFlowHandler(config_entries.OptionsFlow):
           CONF_CLIMATES, CONF_COVERS,
           CONF_MEDIA_PLAYERS, CONF_CAMERAS, CONF_SCENE_MAP, CONF_SCENE_MAP_TEXT,
           CONF_FANS, CONF_LOCKS, CONF_ALARM_PANELS, CONF_OPEN_WITHOUT_CODE,
+          CONF_CALENDARS,
         )
         for entry in self.hass.config_entries.async_entries(DOMAIN):
           if entry.entry_id == self.config_entry.entry_id:
@@ -997,6 +1000,9 @@ class Tab5OptionsFlowHandler(config_entries.OptionsFlow):
         ),
         vol.Optional(CONF_OPEN_WITHOUT_CODE, default=merged.get(CONF_OPEN_WITHOUT_CODE, [])): selector.EntitySelector(
           selector.EntitySelectorConfig(domain=["lock", "alarm_control_panel"], multiple=True)
+        ),
+        vol.Optional(CONF_CALENDARS, default=merged.get(CONF_CALENDARS, [])): selector.EntitySelector(
+          selector.EntitySelectorConfig(domain=["calendar"], multiple=True)
         ),
         vol.Optional(CONF_CAMERAS, default=merged.get(CONF_CAMERAS, [])): selector.EntitySelector(
           selector.EntitySelectorConfig(domain=["camera"], multiple=True)
@@ -1136,6 +1142,7 @@ def _merge_all_entities(hass, current: Dict[str, Any]) -> Dict[str, Any]:
   all_cameras = list(current.get(CONF_CAMERAS, []))
   all_images = list(current.get(CONF_IMAGES, []))
   all_fans = list(current.get(CONF_FANS, []))
+  all_calendars = list(current.get(CONF_CALENDARS, []))
   all_locks = list(current.get(CONF_LOCKS, []))
   all_alarm_panels = list(current.get(CONF_ALARM_PANELS, []))
   all_open_without_code = list(current.get(CONF_OPEN_WITHOUT_CODE, []))
@@ -1171,6 +1178,7 @@ def _merge_all_entities(hass, current: Dict[str, Any]) -> Dict[str, Any]:
     all_cameras.extend(list(data.get(CONF_CAMERAS, [])))
     all_images.extend(list(data.get(CONF_IMAGES, [])))
     all_fans.extend(list(data.get(CONF_FANS, [])))
+    all_calendars.extend(list(data.get(CONF_CALENDARS, [])))
     all_locks.extend(list(data.get(CONF_LOCKS, [])))
     all_alarm_panels.extend(list(data.get(CONF_ALARM_PANELS, [])))
     all_open_without_code.extend(list(data.get(CONF_OPEN_WITHOUT_CODE, [])))
@@ -1191,6 +1199,7 @@ def _merge_all_entities(hass, current: Dict[str, Any]) -> Dict[str, Any]:
     CONF_CAMERAS: _unique(all_cameras),
     CONF_IMAGES: _unique(all_images),
     CONF_FANS: _unique(all_fans),
+    CONF_CALENDARS: _unique(all_calendars),
     CONF_LOCKS: _unique(all_locks),
     CONF_ALARM_PANELS: _unique(all_alarm_panels),
     CONF_OPEN_WITHOUT_CODE: _unique(all_open_without_code),
@@ -1224,6 +1233,7 @@ def _convert_entity_data(user_input: Dict[str, Any], current: Dict[str, Any]) ->
     return [item for item in values if entity_domain(item) in domains]
 
   fans = selected(CONF_FANS, ("fan",))
+  calendars = selected(CONF_CALENDARS, ("calendar",))
   images = selected(CONF_IMAGES, ("image",))
   locks = selected(CONF_LOCKS, ("lock",))
   alarm_panels = selected(CONF_ALARM_PANELS, ("alarm_control_panel",))
@@ -1251,6 +1261,7 @@ def _convert_entity_data(user_input: Dict[str, Any], current: Dict[str, Any]) ->
   updated[CONF_CAMERAS] = cameras
   updated[CONF_IMAGES] = images
   updated[CONF_FANS] = fans
+  updated[CONF_CALENDARS] = calendars
   updated[CONF_LOCKS] = locks
   updated[CONF_ALARM_PANELS] = alarm_panels
   updated[CONF_OPEN_WITHOUT_CODE] = open_without_code
@@ -1383,6 +1394,9 @@ def _ha_url_host(hass: HomeAssistant, prefer_external: bool) -> str:
 
 
 def _source_ip_for_target(target_host: str | None) -> str:
+  override = advertised_host(None)
+  if override:
+    return override
   try:
     target_ip = ipaddress.ip_address(str(target_host or "").strip())
   except ValueError:
